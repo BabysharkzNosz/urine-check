@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="th"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ประเมินสีปัสสาวะ</title>
+<style>
+:root{--bg:#fff;--fg:#1c1c1e;--card:#f2f2f7;--mut:#6b6b73;--pri:#0a7cff;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111;--fg:#f2f2f2;--card:#1e1e22;--mut:#9a9aa3}}
+*{box-sizing:border-box}body{margin:0 auto;background:var(--bg);color:var(--fg);font-family:"Sarabun","Noto Sans Thai",system-ui,sans-serif;padding:14px;max-width:640px}
+h1{font-size:20px;margin:4px 0 2px}p.s{color:var(--mut);margin:0 0 12px;font-size:14px}
+.btn{display:block;width:100%;padding:14px;border:0;border-radius:12px;background:var(--pri);color:#fff;font-size:17px;font-family:inherit;text-align:center}
+.btn.g{background:var(--card);color:var(--fg);margin-top:8px;font-size:15px;padding:10px}
+.row{display:flex;gap:8px}
+canvas{width:100%;border-radius:12px;display:none;touch-action:manipulation;margin-top:12px}
+#hint{display:none;background:var(--card);padding:10px;border-radius:10px;font-size:14px;margin-top:10px}
+.res{background:var(--card);border-radius:12px;padding:12px;margin-top:10px;display:flex;gap:12px}
+.num{flex:none;width:44px;height:44px;border-radius:50%;color:#fff;font-weight:700;font-size:22px;display:flex;align-items:center;justify-content:center}
+.res b{display:block}.res small{color:var(--mut)}
+.urgent{outline:2px solid #d00}
+.note{font-size:12px;color:var(--mut);margin-top:14px}
+</style></head><body>
+<h1>ประเมินสีปัสสาวะ (ระดับ 0–4)</h1>
+<p class="s">ถ่ายรูปกระปุกบนพื้นหลังขาว แสงสว่างสม่ำเสมอ แล้วแตะที่สีปัสสาวะในแต่ละกระปุก</p>
+<label class="btn">📷 ถ่ายรูป / เลือกรูป<input id="f" type="file" accept="image/*" capture="environment" hidden></label>
+<div id="hint">แตะที่ <b>ตัวปัสสาวะในกระปุก</b> ทีละกระปุก ระบบจะแสดงเลขระดับบนกระปุก (แตะที่วงกลมเดิมเพื่อลบ)</div>
+<canvas id="c"></canvas>
+<div class="row" id="tools" style="display:none"><button class="btn g" id="undo">↩︎ ย้อนกลับ</button><button class="btn g" id="clr">ล้างทั้งหมด</button></div>
+<div id="out"></div>
+<p class="note">ใช้ประกอบการประเมินเบื้องต้นตามตารางอ้างอิงเท่านั้น สีในภาพอาจคลาดเคลื่อนตามแสง หากมีอาการผิดปกติให้แจ้งครูฝึกหรือพบแพทย์</p>
+<script>
+const INFO=[
+{c:"#6fa8d6",n:"ใสเหมือนน้ำ",w:"ดื่มน้ำมากเกินไป",a:"ลดปริมาณการดื่มน้ำ จนปัสสาวะเป็นสีเหลืองใสจาง ๆ"},
+{c:"#c9b52a",n:"เหลืองใสจาง ๆ",w:"ดื่มน้ำเพียงพอ",a:"ทหารควรรักษาการดื่มน้ำในปริมาณเดิมให้ได้ตลอดทั้งวัน"},
+{c:"#d9961a",n:"เหลือง",w:"ดื่มน้ำน้อยเกินไป",a:"ต้องดื่มน้ำให้มากขึ้นในทุก ๆ ครั้งที่พักการฝึก อย่างน้อยชั่วโมงละ 2 แก้ว (500 ซีซี)"},
+{c:"#e37a10",n:"เหลืองเข้ม",w:"ดื่มน้ำไม่พอ",a:"ดื่มน้ำให้มากกว่าปกติ อย่างน้อยชั่วโมงละ 4 แก้ว (1,000 ซีซี) และสังเกตสีปัสสาวะครั้งถัดไป ถ้ายังเข้มอยู่ให้ดื่มน้ำเพิ่มอีก"},
+{c:"#c0261a",n:"สีน้ำตาล",w:"มีการสลายของกล้ามเนื้อ อาจทำให้ไตวายได้",a:"⚠️ รีบแจ้งครูฝึกทันที และครูฝึกต้องรีบนำทหารไปพบแพทย์ทันที"}];
+const REF=[[236,238,236],[238,232,165],[236,208,120],[222,160,80],[62,32,24]];
+const lab=([r,g,b])=>{const f=v=>{v/=255;return v>.04045?Math.pow((v+.055)/1.055,2.4):v/12.92};
+ const R=f(r),G=f(g),B=f(b);const x=(R*.4124+G*.3576+B*.1805)/.95047,y=R*.2126+G*.7152+B*.0722,z=(R*.0193+G*.1192+B*.9505)/1.08883;
+ const t=v=>v>.008856?Math.cbrt(v):7.787*v+16/116;return[116*t(y)-16,500*(t(x)-t(y)),200*(t(y)-t(z))]};
+const RL=REF.map(lab);
+function classify(rgb){const l=lab(rgb);let best=0,bd=1e9;RL.forEach((q,i)=>{
+ const d=.5*(l[0]-q[0])**2+(l[1]-q[1])**2+(l[2]-q[2])**2;if(d<bd){bd=d;best=i}});return best}
+const cv=document.getElementById('c'),cx=cv.getContext('2d',{willReadFrequently:true});
+let img=null,pts=[];
+document.getElementById('f').onchange=e=>{const file=e.target.files[0];if(!file)return;
+ const im=new Image();im.onload=()=>{const s=Math.min(1,1000/Math.max(im.width,im.height));
+ cv.width=Math.round(im.width*s);cv.height=Math.round(im.height*s);cx.drawImage(im,0,0,cv.width,cv.height);
+ img=cx.getImageData(0,0,cv.width,cv.height);pts=[];cv.style.display='block';
+ document.getElementById('hint').style.display='block';document.getElementById('tools').style.display='flex';draw()};
+ im.src=URL.createObjectURL(file)};
+const RAD=()=>Math.max(8,cv.width*.025);
+function sample(x,y){const r=Math.round(RAD()),ch=[[],[],[]];
+ for(let j=-r;j<=r;j++)for(let i=-r;i<=r;i++){if(i*i+j*j>r*r)continue;const px=Math.round(x+i),py=Math.round(y+j);
+ if(px<0||py<0||px>=img.width||py>=img.height)continue;const k=(py*img.width+px)*4;for(let c=0;c<3;c++)ch[c].push(img.data[k+c])}
+ return ch.map(a=>{a.sort((p,q)=>p-q);return a[a.length>>1]})}
+cv.onclick=e=>{const b=cv.getBoundingClientRect(),k=cv.width/b.width,x=(e.clientX-b.left)*k,y=(e.clientY-b.top)*k;
+ const hit=pts.findIndex(p=>Math.hypot(p.x-x,p.y-y)<RAD()*1.8);
+ if(hit>=0)pts.splice(hit,1);else{const rgb=sample(x,y);pts.push({x,y,rgb,lv:classify(rgb)})}draw()};
+document.getElementById('undo').onclick=()=>{pts.pop();draw()};
+document.getElementById('clr').onclick=()=>{pts=[];draw()};
+function draw(){if(!img)return;cx.putImageData(img,0,0);const r=RAD();
+ pts.forEach(p=>{cx.lineWidth=3;cx.strokeStyle='#fff';cx.beginPath();cx.arc(p.x,p.y,r,0,7);cx.stroke();
+ const br=r*1.5,by=Math.max(br,p.y-r-br-4);cx.fillStyle=INFO[p.lv].c;cx.beginPath();cx.arc(p.x,by,br,0,7);cx.fill();
+ cx.stroke();cx.fillStyle='#fff';cx.font='bold '+br*1.5+'px sans-serif';cx.textAlign='center';cx.textBaseline='middle';
+ cx.fillText(p.lv,p.x,by+1)});
+ document.getElementById('out').innerHTML=pts.map((p,i)=>{const t=INFO[p.lv];
+ return `<div class="res ${p.lv==4?'urgent':''}"><div class="num" style="background:${t.c}">${p.lv}</div><div><b>กระปุกที่ ${i+1}: ระดับ ${p.lv} – ${t.n}</b><small>สาเหตุ: ${t.w}</small><div>${t.a}</div></div></div>`}).join('')}
+</script></body></html>
